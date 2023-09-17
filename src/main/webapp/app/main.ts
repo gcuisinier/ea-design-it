@@ -35,6 +35,8 @@ import ApplicationsDiagramService from '@/eadesignit/applications-diagram/applic
 import LandscapeViewService from '@/entities/landscape-view/landscape-view.service';
 import ApplicationService from '@/entities/application/application.service';
 import ExportService from '@/eadesignit/export.service';
+import ExternalSystemService from '@/entities/external-system/external-system.service';
+import FullExportService from '@/eadesignit/full-export/full-export.service';
 
 // jhipster-needle-add-entity-service-to-main-import - JHipster will import entities services here
 
@@ -62,6 +64,17 @@ const applicationService = new ApplicationService();
 router.beforeEach(async (to, from, next) => {
   // Check if anonymous read is allowed
   console.log('SHOULD LOAD ANONYMOUS READING PARAMETER');
+  if (accountService.initialized) {
+    doProcess(to, from, next);
+  } else {
+    accountService.retrieveAnonymousProperty().then(() => {
+      doProcess(to, from, next);
+    });
+  }
+});
+
+function doProcess(to, from, next) {
+  console.log('accountService.anonymousReadAllowed : ' + accountService.anonymousReadAllowed);
 
   if (!to.matched.length) {
     next('/not-found');
@@ -88,7 +101,7 @@ router.beforeEach(async (to, from, next) => {
     // no authorities, so just proceed
     next();
   }
-});
+}
 
 /* tslint:disable */
 new Vue({
@@ -124,6 +137,9 @@ new Vue({
     applicationService: () => new ApplicationService(),
 
     exportService: () => new ExportService(),
+    externalSystemService: () => new ExternalSystemService(),
+
+    fullExportService: () => new FullExportService(),
   },
   store,
   created: function () {

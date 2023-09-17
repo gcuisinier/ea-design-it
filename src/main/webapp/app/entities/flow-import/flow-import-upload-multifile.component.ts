@@ -23,9 +23,10 @@ export default class FlowImportUploadMultiFile extends Vue {
 
   public sheetnames: string[] = [];
   public checkedNames: string[] = [];
+  public landscapeMap = {};
 
-  public dtos = null;
-  public notFilteredDtos = null;
+  public dtos = [];
+  public notFilteredDtos = [];
 
   public handleFileUpload(event): void {
     console.log(event);
@@ -37,15 +38,18 @@ export default class FlowImportUploadMultiFile extends Vue {
   public getSheetnames(): void {
     this.isFetching = true;
     this.flowImportService()
-      .getSheetNames(this.excelFile)
+      .getSummary(this.excelFile)
       .then(
         res => {
           this.isFetching = false;
-          const tmpsheetnames = res.data;
-          tmpsheetnames.forEach((name, i) => {
-            if (name.startsWith('FLW')) {
-              this.checkedNames.push(name);
-              this.sheetnames.push(name);
+          const summary = res.data;
+          summary.forEach(row => {
+            if (row['entity.type'] === 'Landscape') {
+              const sheetname: string = row['sheet hyperlink'];
+              const landscape: string = row['landscape.name'];
+              this.checkedNames.push(sheetname);
+              this.sheetnames.push(sheetname);
+              this.landscapeMap[sheetname] = landscape;
             }
           });
         },
@@ -57,11 +61,14 @@ export default class FlowImportUploadMultiFile extends Vue {
   }
 
   public selectAll() {
-    this.checkedNames = this.sheetnames;
+    if (!this.fileSubmited) {
+      this.checkedNames = [];
+      this.checkedNames.push(...this.sheetnames);
+    }
   }
 
   public selectNone() {
-    this.checkedNames = [];
+    if (!this.fileSubmited) this.checkedNames = [];
   }
 
   // Step 2 - Submit de file and selected sheet names
@@ -69,13 +76,26 @@ export default class FlowImportUploadMultiFile extends Vue {
   public submitFile(): void {
     this.isFetching = true;
     this.fileSubmited = true;
+    // send file n times, sheet by sheet
+    // this is not optimal, but it's the easier way to have a reactive behavior and avoid time out
+    // serialized to avoid database transactional problem
+    this.uploadOneSheet();
+  }
+
+  public uploadOneSheet() {
+    const sheetToProcess: string = this.checkedNames.shift();
     this.flowImportService()
-      .uploadMultipleFile(this.excelFile, this.checkedNames)
+      .uploadMultipleFile(this.excelFile, [sheetToProcess])
       .then(
         res => {
-          this.dtos = res.data;
-          this.isFetching = false;
+          this.dtos.push(...res.data);
+          this.notFilteredDtos.push(...res.data);
           this.rowsLoaded = true;
+          if (this.checkedNames.length > 0) {
+            this.uploadOneSheet();
+          } else {
+            this.isFetching = false;
+          }
         },
         err => {
           this.isFetching = false;
@@ -107,42 +127,5 @@ export default class FlowImportUploadMultiFile extends Vue {
       };
       this.dtos.push(newdto);
     });
-  }
-
-  public getErrors() {
-    const errors = [];
-    this.notFilteredDtos.forEach(dto => {
-      let line = 1;
-      dto.flowImports.forEach(elem => {
-        const flowImport = elem;
-        if (
-          flowImport.importFunctionalFlowStatus === 'ERROR' ||
-          flowImport.importInterfaceStatus === 'ERROR' ||
-          flowImport.importDataFlowStatus === 'ERROR'
-        ) {
-          flowImport.id = dto.excelFileName + '_' + line.toString();
-          const errorRow = {
-            ...flowImport,
-          };
-          errors.push(errorRow);
-          console.log(errorRow);
-        }
-        line = line + 1;
-      });
-    });
-    return errors;
-  }
-
-  public exportErrors() {
-    const errors = this.getErrors();
-    let csvContent = 'data:text/csv;charset=utf-8,';
-    csvContent += [Object.keys(errors[0]).join(';'), ...errors.map(row => Object.values(row).join(';').replace(/\n/gm, ''))]
-      .join('\n')
-      .replace(/(^\[)|(\]$)/gm, '');
-    const data = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', data);
-    link.setAttribute('download', 'export.csv');
-    link.click();
   }
 }

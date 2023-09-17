@@ -2,6 +2,7 @@ package com.mauvaisetroupe.eadesignit.service.importfile;
 
 import com.mauvaisetroupe.eadesignit.domain.LandscapeView;
 import com.mauvaisetroupe.eadesignit.repository.LandscapeViewRepository;
+import com.mauvaisetroupe.eadesignit.service.importfile.util.CapabilityMappingDTO;
 import com.mauvaisetroupe.eadesignit.service.importfile.util.ExcelUtils;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -37,18 +38,33 @@ public class ExportFullDataService {
     @Autowired
     CapabilityExportService capabilityExportService;
 
+    @Autowired
+    ExternalSystemExportService externalSystemExportService;
+
+    @Autowired
+    ApplicationCapabilityExportService capabilityMappingExportService;
+
     private static String ENTITY_TYPE = "entity.type";
     private static String SHEET_LINK = "sheet hyperlink";
     private static String LANDSCAPE_NAME = "landscape.name";
 
-    public ByteArrayOutputStream getallData() throws IOException {
+    public ByteArrayOutputStream getallData(
+        boolean exportApplications,
+        boolean exportComponents,
+        boolean exportOwner,
+        boolean exportExternalSystem,
+        boolean exportCapabilities,
+        List<Long> landscapesToExport,
+        List<Long> capabilitiesMappingToExport,
+        boolean exportCapabilitiesWithNoLandscape
+    ) throws IOException {
         Workbook workbook = new XSSFWorkbook();
         Sheet summarySheet = workbook.createSheet(SUMMARY_SHEET);
-        Sheet appliSheet = workbook.createSheet("Application");
-        Sheet componentSheet = workbook.createSheet("Component");
-        Sheet ownerSheet = workbook.createSheet("Owner");
-        Sheet externalSystemSheet = workbook.createSheet("ExternalSystem");
-        Sheet capabilitiesSheet = workbook.createSheet("Capabilities");
+        Sheet appliSheet = workbook.createSheet(ApplicationImportService.APPLICATION_SHEET_NAME);
+        Sheet componentSheet = workbook.createSheet(ComponentImportService.COMPONENT_SHEET_NAME);
+        Sheet ownerSheet = workbook.createSheet(ApplicationImportService.OWNER_SHEET_NAME);
+        Sheet externalSystemSheet = workbook.createSheet(ExternalSystemImportService.SHEET_NAME);
+        Sheet capabilitiesSheet = workbook.createSheet(CapabilityImportService.CAPABILITY_SHEET_NAME);
 
         int lineNb = 0;
         int nbcolumn = 0;
@@ -57,9 +73,29 @@ public class ExportFullDataService {
         headerRow.createCell(nbcolumn++).setCellValue(SHEET_LINK);
         headerRow.createCell(nbcolumn++).setCellValue(LANDSCAPE_NAME);
 
-        // Application, ApplicationComponent, Owner & ExternalSystem
+        // External Systems
+        if (exportExternalSystem) {
+            externalSystemExportService.writeExternalSytemSheet(externalSystemSheet, workbook);
+            ExcelUtils.autoSizeAllColumns(externalSystemSheet);
+            ExcelUtils.addHeaderColorAndFilte(workbook, externalSystemSheet);
+        }
 
-        applicationExportService.writeSheets(appliSheet, componentSheet, ownerSheet, externalSystemSheet, workbook);
+        // Application, ApplicationComponent, Owner & ExternalSystem
+        if (exportApplications) {
+            applicationExportService.writeApplication(appliSheet);
+            ExcelUtils.autoSizeAllColumns(appliSheet);
+            ExcelUtils.addHeaderColorAndFilte(workbook, appliSheet);
+        }
+        if (exportComponents) {
+            applicationExportService.writeComponent(componentSheet);
+            ExcelUtils.autoSizeAllColumns(componentSheet);
+            ExcelUtils.addHeaderColorAndFilte(workbook, componentSheet);
+        }
+        if (exportOwner) {
+            applicationExportService.writeOwner(ownerSheet);
+            ExcelUtils.autoSizeAllColumns(ownerSheet);
+            ExcelUtils.addHeaderColorAndFilte(workbook, ownerSheet);
+        }
         addApplicationSummary(
             workbook,
             summarySheet,
@@ -76,22 +112,35 @@ public class ExportFullDataService {
         List<LandscapeView> landscapes = landscapeViewRepository.findAll();
         int landscapeNb = 1;
         for (LandscapeView landscape : landscapes) {
-            String flowSheetName = "FLW." + landscapeNb++;
-            flowSheetName = flowSheetName.substring(0, Math.min(10, flowSheetName.length()));
-            addSummryFlow(workbook, summarySheet, landscape, flowSheetName, lineNb++);
-            Sheet flowSheet = workbook.createSheet(flowSheetName);
-            landscapeExportService.writeFlows(flowSheet, landscape.getId());
-            ExcelUtils.autoSizeAllColumns(flowSheet);
-            ExcelUtils.addHeaderColorAndFilte(workbook, flowSheet);
-            ExcelUtils.alternateColors(workbook, flowSheet, 1);
+            if (landscapesToExport.contains(landscape.getId())) {
+                String flowSheetName = "FLW." + landscapeNb++;
+                flowSheetName = flowSheetName.substring(0, Math.min(10, flowSheetName.length()));
+                addSummryFlow(workbook, summarySheet, landscape, flowSheetName, lineNb++);
+                Sheet flowSheet = workbook.createSheet(flowSheetName);
+                landscapeExportService.writeFlows(flowSheet, landscape.getId());
+                ExcelUtils.autoSizeAllColumns(flowSheet);
+                ExcelUtils.addHeaderColorAndFilte(workbook, flowSheet);
+                ExcelUtils.alternateColors(workbook, flowSheet, 1);
+            }
         }
 
         // Capabilities
-        capabilityExportService.writeCapabilities(capabilitiesSheet);
-        ExcelUtils.autoSizeAllColumns(capabilitiesSheet);
-        ExcelUtils.addHeaderColorAndFilte(workbook, capabilitiesSheet);
-        addCapabilitiesSummary(workbook, summarySheet, capabilitiesSheet.getSheetName(), lineNb);
+        if (exportCapabilities) {
+            capabilityExportService.writeCapabilities(capabilitiesSheet, workbook);
+            ExcelUtils.autoSizeAllColumns(capabilitiesSheet);
+            ExcelUtils.addHeaderColorAndFilte(workbook, capabilitiesSheet);
+            addCapabilitiesSummary(workbook, summarySheet, capabilitiesSheet.getSheetName(), lineNb++);
+        }
 
+        // CapabilityMapping
+        List<CapabilityMappingDTO> capabilityMappingDTOs = capabilityMappingExportService.writeApplicationCapabilitiesMapping(
+            workbook,
+            capabilitiesMappingToExport,
+            exportCapabilitiesWithNoLandscape
+        );
+        addCapabilitieMappingsSummary(workbook, summarySheet, capabilityMappingDTOs, lineNb);
+
+        // Close stream
         ExcelUtils.autoSizeAllColumns(summarySheet);
         ExcelUtils.addHeaderColorAndFilte(workbook, summarySheet);
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
@@ -155,6 +204,22 @@ public class ExportFullDataService {
         // Link to shet
         Cell cell = row.createCell(columnNb++);
         createHyperlink(workbook, capabilitySheetName, cell);
+    }
+
+    private void addCapabilitieMappingsSummary(
+        Workbook workbook,
+        Sheet summarySheet,
+        List<CapabilityMappingDTO> capabilityMappingDTOs,
+        int lineNb
+    ) {
+        for (CapabilityMappingDTO capabilityMappingDTO : capabilityMappingDTOs) {
+            Row row = summarySheet.createRow(lineNb++);
+            int columnNb = 0;
+            row.createCell(columnNb++).setCellValue("Capability Mapping");
+            Cell cell = row.createCell(columnNb++);
+            createHyperlink(workbook, capabilityMappingDTO.getSheetName(), cell);
+            row.createCell(columnNb++).setCellValue(capabilityMappingDTO.getLandscape());
+        }
     }
 
     private void createHyperlink(Workbook workbook, String sheetName, Cell cell) {

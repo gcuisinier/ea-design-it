@@ -18,6 +18,8 @@ logging:
     ROOT: INFO
     tech.jhipster: INFO
     com.mauvaisetroupe.eadesignit: INFO
+    org.hibernate.SQL: ERROR
+    org.hibernate.type.descriptor.sql.BasicBinder: ERROR
 
 management:
   metrics:
@@ -33,14 +35,18 @@ spring:
       enabled: false
   datasource:
     type: com.zaxxer.hikari.HikariDataSource
-    url: jdbc:oracle:thin:@localhost:1521/XEPDB1
+    url: jdbc:postgresql://localhost:5432/EADesignIt
     username: EADesignIt
-    password: EADesignIt
+    password:
     hikari:
       poolName: Hikari
       auto-commit: false
-      schema: EADESIGNIT
+      schema: public
   jpa:
+    database-platform: tech.jhipster.domain.util.FixedPostgreSQL10Dialect
+    properties:
+      # when schema not writen in SQL order, random bug : rlation ´flow' does not exist
+      hibernate.default_schema: public
   # Replace by 'prod, faker' to add the faker context and have sample data loaded in production
   liquibase:
     contexts: prod

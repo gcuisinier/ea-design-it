@@ -2,6 +2,7 @@ package com.mauvaisetroupe.eadesignit.web.rest;
 
 import com.mauvaisetroupe.eadesignit.domain.ApplicationImport;
 import com.mauvaisetroupe.eadesignit.domain.DataFlowImport;
+import com.mauvaisetroupe.eadesignit.domain.ExternalSystem;
 import com.mauvaisetroupe.eadesignit.domain.FlowImport;
 import com.mauvaisetroupe.eadesignit.domain.FunctionalFlow;
 import com.mauvaisetroupe.eadesignit.domain.LandscapeView;
@@ -14,10 +15,12 @@ import com.mauvaisetroupe.eadesignit.service.importfile.ComponentImportService;
 import com.mauvaisetroupe.eadesignit.service.importfile.DataFlowImportService;
 import com.mauvaisetroupe.eadesignit.service.importfile.ExcelReader;
 import com.mauvaisetroupe.eadesignit.service.importfile.ExportFullDataService;
+import com.mauvaisetroupe.eadesignit.service.importfile.ExternalSystemImportService;
 import com.mauvaisetroupe.eadesignit.service.importfile.FlowImportService;
 import com.mauvaisetroupe.eadesignit.service.importfile.LandscapeExportService;
 import com.mauvaisetroupe.eadesignit.service.importfile.PlantumlImportService;
 import com.mauvaisetroupe.eadesignit.service.importfile.dto.ApplicationCapabilityDTO;
+import com.mauvaisetroupe.eadesignit.service.importfile.dto.ApplicationCapabilityItemDTO;
 import com.mauvaisetroupe.eadesignit.service.importfile.dto.CapabilityImportDTO;
 import com.mauvaisetroupe.eadesignit.service.importfile.dto.FlowImportDTO;
 import com.mauvaisetroupe.eadesignit.web.rest.errors.ApplicationImportException;
@@ -29,6 +32,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import javax.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ByteArrayResource;
@@ -87,10 +91,19 @@ public class ImportResource {
     @Autowired
     private PlantumlImportService plantumlImportService;
 
+    @Autowired
+    private ExternalSystemImportService externalSystemImportService;
+
     @PostMapping("/import/sheetnames")
     public List<String> getSheetNames(@RequestPart MultipartFile file) throws Exception {
         ExcelReader excelReader = new ExcelReader(file.getInputStream());
         return excelReader.getSheetNames();
+    }
+
+    @PostMapping("/import/summary")
+    public List<Map<String, Object>> getSummary(@RequestPart MultipartFile file) throws Exception {
+        ExcelReader excelReader = new ExcelReader(file.getInputStream());
+        return excelReader.getSheet(ExportFullDataService.SUMMARY_SHEET);
     }
 
     @PostMapping("/import/application/upload-file")
@@ -161,10 +174,14 @@ public class ImportResource {
     @PostMapping("/import/application/capability/upload-file")
     public List<ApplicationCapabilityDTO> uploadapplicationCapabilityFile(
         @RequestPart MultipartFile file,
-        @RequestParam String[] sheetname,
-        @RequestParam String[] landscape
+        @RequestParam String[] sheetnames
     ) throws Exception {
-        return applicationCapabilityImportService.importExcel(file.getInputStream(), file.getOriginalFilename(), sheetname, landscape);
+        List<ApplicationCapabilityDTO> dtos = new ArrayList<>();
+        for (String sheetname : sheetnames) {
+            List<ApplicationCapabilityItemDTO> items = applicationCapabilityImportService.importExcel(file.getInputStream(), sheetname);
+            dtos.add(new ApplicationCapabilityDTO(sheetname, items));
+        }
+        return dtos;
     }
 
     @GetMapping(value = "export/landscape/{id}")
@@ -193,8 +210,26 @@ public class ImportResource {
     }
 
     @GetMapping(value = "export/all")
-    public ResponseEntity<Resource> downloadAllData() throws IOException {
-        ByteArrayOutputStream file = exportFullDataService.getallData();
+    public ResponseEntity<Resource> downloadAllData(
+        @RequestParam boolean applications,
+        @RequestParam boolean applicationComponents,
+        @RequestParam boolean owner,
+        @RequestParam boolean externalSystem,
+        @RequestParam boolean capabilities,
+        @RequestParam(value = "landscapes[]", required = false, defaultValue = "") List<Long> landscapes,
+        @RequestParam(value = "capabilitiesMapping[]", required = false, defaultValue = "") List<Long> capabilitiesMapping,
+        @RequestParam boolean capabilitiesMappingWithNoLandscape
+    ) throws IOException {
+        ByteArrayOutputStream file = exportFullDataService.getallData(
+            applications,
+            applicationComponents,
+            owner,
+            externalSystem,
+            capabilities,
+            landscapes,
+            capabilitiesMapping,
+            capabilitiesMappingWithNoLandscape
+        );
         ByteArrayResource byteArrayResource = new ByteArrayResource(file.toByteArray());
 
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd-h-m-s");
@@ -205,5 +240,10 @@ public class ImportResource {
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=all-data-" + date + ".xlsx")
             .contentType(MediaType.parseMediaType("application/vnd.ms-excel"))
             .body(byteArrayResource);
+    }
+
+    @PostMapping("/import/external-system/upload-file")
+    public List<ExternalSystem> uploadExternalSystemFile(@RequestPart MultipartFile file) throws Exception {
+        return externalSystemImportService.importExcel(file.getInputStream());
     }
 }

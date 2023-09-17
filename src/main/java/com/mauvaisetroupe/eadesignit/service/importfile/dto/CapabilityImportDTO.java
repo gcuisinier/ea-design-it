@@ -1,6 +1,7 @@
 package com.mauvaisetroupe.eadesignit.service.importfile.dto;
 
 import com.mauvaisetroupe.eadesignit.domain.enumeration.ImportStatus;
+import com.mauvaisetroupe.eadesignit.service.dto.CapabilityDTO;
 
 public class CapabilityImportDTO {
 
@@ -11,6 +12,13 @@ public class CapabilityImportDTO {
     private String domain;
     private ImportStatus status;
     private String error;
+
+    public CapabilityImportDTO(CapabilityDTO l0, CapabilityDTO l1, CapabilityDTO l2, CapabilityDTO l3) {
+        L0 = l0;
+        L1 = l1;
+        L2 = l2;
+        L3 = l3;
+    }
 
     public CapabilityDTO getL0() {
         return L0;
